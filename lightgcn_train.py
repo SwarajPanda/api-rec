@@ -124,3 +124,71 @@ val_scores = model.get_score(user_emb_final, item_emb_final)
 # For each mashup, get top-N recommended APIs
 top_N = 10
 recommendations = torch.topk(val_scores, top_N, dim=1).indices
+
+def get_ground_truth(edge_index, num_mashups):
+    """Returns a dict: mashup_idx -> set of true api_idx"""
+    mashup_to_apis = {i: set() for i in range(num_mashups)}
+    for mashup_idx, api_idx in edge_index:
+        mashup_to_apis[mashup_idx].add(api_idx)
+    return mashup_to_apis
+
+def recall_at_k(recommendations, ground_truth, k=10):
+    hits = 0
+    total = 0
+    for mashup_idx, true_apis in ground_truth.items():
+        recs = set(recommendations[mashup_idx][:k])
+        hits += len(recs & true_apis)
+        total += len(true_apis)
+    return hits / total if total > 0 else 0
+
+def precision_at_k(recommendations, ground_truth, k=10):
+    hits = 0
+    total = 0
+    for mashup_idx, true_apis in ground_truth.items():
+        recs = set(recommendations[mashup_idx][:k])
+        hits += len(recs & true_apis)
+        total += k
+    return hits / total if total > 0 else 0
+
+def ndcg_at_k(recommendations, ground_truth, k=10):
+    ndcg_total = 0
+    num_users = len(ground_truth)
+    for mashup_idx, true_apis in ground_truth.items():
+        recs = recommendations[mashup_idx][:k]
+        dcg = 0
+        idcg = 0
+        true_apis_list = list(true_apis)
+        for rank, api_idx in enumerate(recs):
+            if api_idx in true_apis:
+                dcg += 1 / np.log2(rank + 2)
+        for rank in range(min(len(true_apis), k)):
+            idcg += 1 / np.log2(rank + 2)
+        ndcg = dcg / idcg if idcg > 0 else 0
+        ndcg_total += ndcg
+    return ndcg_total / num_users if num_users > 0 else 0
+
+# --- After training, for evaluation on test set ---
+# Convert test edges to indices
+test_edges = pd.read_csv('data_final/test_edges.csv')
+test_edges['mashup_idx'] = test_edges['mashup_id'].map(mashup2idx)
+test_edges['api_idx'] = test_edges['api_id'].map(api2idx)
+test_edge_index = test_edges[['mashup_idx', 'api_idx']].values
+
+# Generate recommendations for each mashup
+model.eval()
+user_emb_final, item_emb_final = model(train_edge_index)
+scores = model.get_score(user_emb_final, item_emb_final)  # [num_mashups, num_apis]
+top_k = 10
+recommendations = torch.topk(scores, top_k, dim=1).indices.cpu().numpy()  # [num_mashups, top_k]
+
+# Prepare ground truth
+ground_truth = get_ground_truth(test_edge_index, num_mashups)
+
+# Compute metrics
+recall = recall_at_k(recommendations, ground_truth, k=top_k)
+precision = precision_at_k(recommendations, ground_truth, k=top_k)
+ndcg = ndcg_at_k(recommendations, ground_truth, k=top_k)
+
+print(f"Recall@{top_k}: {recall:.4f}")
+print(f"Precision@{top_k}: {precision:.4f}")
+print(f"NDCG@{top_k}: {ndcg:.4f}")
