@@ -4,7 +4,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-
+import random
+seed = 42
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 # 1. Load Data
 train_edges = pd.read_csv('data_final/train_edges.csv')
 val_edges = pd.read_csv('data_final/val_edges.csv')
