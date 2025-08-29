@@ -107,6 +107,7 @@ for epoch in range(10):
     user_emb_final, item_emb_final = model(train_edge_index)
     for batch in loader:
         u, i, j = batch
+        user_emb_final, item_emb_final = model(train_edge_index)
         user_emb = user_emb_final[u]
         pos_emb = item_emb_final[i]
         neg_emb = item_emb_final[j]
